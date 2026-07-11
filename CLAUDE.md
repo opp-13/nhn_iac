@@ -25,6 +25,7 @@ go test ./...    # 테스트
 - 각 모듈은 `enabled: bool`, `mode: cli|gui|both` 공통 키를 가진다
 - 인증: OpenStack IaaS API credential 기본, 일부 서비스는 User API 사용
 - credential(tenantId, username, password)은 절대 커밋하지 않는다 — `.env`, 로컬 config만 사용
+- 로컬 config는 절대 접근하지 않는다.
 
 ## 주의사항
 

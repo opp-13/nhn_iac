@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# rescheck config file (holds NHN Cloud tenantId/username/password in plaintext)
+config.yaml
+
 # Editor/IDE
 # .idea/
 # .vscode/

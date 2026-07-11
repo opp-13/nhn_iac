@@ -12,8 +12,8 @@ Set your Credential
 nhn:
   auth:
     tenantId: {YOUR_TENANT_ID}
-    passwordCredentials:
-      username: {YOUR_USER_NAME}
-      password: {YOUR_PASSWORD}
+    region: {REGION}   # optional, defaults to KR1
+    username: {YOUR_USER_NAME}
+    password: {YOUR_PASSWORD}
 ```
 
