@@ -9,10 +9,9 @@ nhn:
   Autoremover:
     enabled: true
     mode: {cli|gui|both}
-  auth:
-    tenantId: {YOUR_TENANT_ID}
-    passwordCredentials:
-      username: {YOUR_USER_NAME}
-      password: {YOUR_PASSWORD}
+
+  ## 리소스를 조회하기 위해 필요
+  Resourcechecker:
+    enabled: true
 ```
 
