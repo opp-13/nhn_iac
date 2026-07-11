@@ -30,3 +30,7 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Claude Code personal/local overrides (per-machine, not shared with team)
+.claude/settings.local.json
+CLAUDE.local.md

@@ -1,0 +1,43 @@
+# CLAUDE.md
+
+NHN Cloud 관리 도구 모음 (Go 단일 바이너리, 모듈형 구조). 초기 개발 단계.
+
+## 명령어
+
+```bash
+go build ./...   # 빌드
+go run .         # 실행
+go test ./...    # 테스트
+```
+
+## 모듈 구조
+
+- `resource_checker/` — NHN Cloud 리소스 조회 (읽기 전용, GET 요청만 허용)
+- `auto_remove_resource/` — 리소스 자동 정리
+  - `nhn/` — NHN Cloud 구현 (현재 대상)
+  - `aws/` — AWS 지원 예정 (미구현)
+
+새 클라우드 지원은 `auto_remove_resource/<provider>/` 형태로 추가한다.
+
+## 설정 규칙
+
+- 모든 모듈은 하나의 `config.yaml`에서 `nhn.<모듈명>` 키로 설정을 읽는다 (스키마는 각 모듈 README 참고)
+- 각 모듈은 `enabled: bool`, `mode: cli|gui|both` 공통 키를 가진다
+- 인증: OpenStack IaaS API credential 기본, 일부 서비스는 User API 사용
+- credential(tenantId, username, password)은 절대 커밋하지 않는다 — `.env`, 로컬 config만 사용
+
+## 주의사항
+
+- Autoremover는 Resourcechecker에 의존한다 (리소스 조회 후 제거)
+- 문서와 커밋 메시지는 한국어 사용
+- 모듈별 세부 코딩 규칙(GET 전용, 파괴적 동작 주의 등)은 `.claude/rules/`에 경로 기반으로 분리되어 있어 해당 경로 작업 시 자동 적용된다
+
+## 문서 · 확장
+
+- 각 모듈의 사용법·설정 스키마는 해당 디렉토리의 README.md 참고 (이 파일에 중복 기재하지 않음)
+- 새 클라우드 provider 추가 워크플로우는 `.claude/skills/add-provider` 스킬 참고
+
+## 개발 워크플로우
+
+기능 개발은 `/plan` → `/execute` → `/ship` 순서로 진행한다 (`.claude/commands/`).
+간단한 오타 수정 등 범위가 명확한 작업은 바로 진행해도 된다.
