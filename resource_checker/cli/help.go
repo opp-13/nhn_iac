@@ -59,10 +59,42 @@ regardless of --output format.
 `
 
 const computeHelp = `Usage: rescheck compute COMMAND [OPTIONS]
-Query Compute (Nova) resources.
+Query Compute (Nova) resources, and start or stop instances.
 
 Commands:
   desc, describe               describe compute resources (see 'rescheck compute desc --help')
+  run, start                   start instances
+  shutdown, stop               stop instances
+`
+
+const computeRunHelp = `Usage: rescheck compute run NAME|ID|GLOB [OPTIONS]
+Start instances. The target is an exact instance name or ID, or a shell
+glob pattern (*, ?, [...]) matched against instance names. When a glob
+is used, the matched instances are listed and you are asked to confirm.
+Instances already ACTIVE are skipped.
+
+  -y, --yes                  skip the confirmation prompt for glob targets
+      --config=PATH          path to config.yaml (default: ./config.yaml)
+
+Examples:
+  rescheck compute run web-01        # exact name, runs immediately
+  rescheck compute run 'test*'       # glob, asks y/N first
+  rescheck compute run '*' -y        # everything, no prompt (careful!)
+`
+
+const computeShutdownHelp = `Usage: rescheck compute shutdown NAME|ID|GLOB [OPTIONS]
+Stop instances. The target is an exact instance name or ID, or a shell
+glob pattern (*, ?, [...]) matched against instance names. When a glob
+is used, the matched instances are listed and you are asked to confirm.
+Instances already SHUTOFF are skipped.
+
+  -y, --yes                  skip the confirmation prompt for glob targets
+      --config=PATH          path to config.yaml (default: ./config.yaml)
+
+Examples:
+  rescheck compute shutdown web-01        # exact name, runs immediately
+  rescheck compute shutdown 'test*'       # glob, asks y/N first
+  rescheck compute shutdown '*' -y        # everything, no prompt (careful!)
 `
 
 const computeDescHelp = `Usage: rescheck compute desc RESOURCE [OPTIONS]
