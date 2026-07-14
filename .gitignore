@@ -30,6 +30,13 @@ go.work.sum
 # rescheck config file (holds NHN Cloud tenantId/username/password in plaintext)
 config.yaml
 
+# instance_scheduler terraform state/working files (local backend + real infra values)
+instance_scheduler/terraform/.terraform/
+instance_scheduler/terraform/terraform.tfstate
+instance_scheduler/terraform/terraform.tfstate.backup
+instance_scheduler/terraform/*.tfvars
+!instance_scheduler/terraform/terraform.tfvars.example
+
 # Editor/IDE
 # .idea/
 # .vscode/

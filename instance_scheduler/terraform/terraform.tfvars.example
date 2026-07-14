@@ -1,0 +1,16 @@
+# 실제 값을 채운 뒤 terraform.tfvars로 복사해서 쓴다 (terraform.tfvars는 .gitignore 처리됨).
+# instances의 각 key는 config.yaml의 nhn.Instancescheduler.instances 중 terraform: true인
+# 항목의 name과 정확히 같은 이름이어야 한다.
+
+network_id = "REPLACE_WITH_EXISTING_NETWORK_ID"
+subnet_id  = "REPLACE_WITH_EXISTING_SUBNET_ID"
+
+instances = {
+  "my-web-01" = {
+    flavor_id       = "REPLACE_WITH_FLAVOR_ID"
+    image_id        = "REPLACE_WITH_IMAGE_ID"
+    key_pair        = "REPLACE_WITH_KEY_PAIR_NAME"
+    security_groups = ["default"]
+    fixed_ip        = null # 예: "10.0.0.10" — 생략(null)하면 DHCP가 자동 할당
+  }
+}

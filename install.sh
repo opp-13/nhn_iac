@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# rescheck를 빌드해 /usr/local/bin (PATH)에 설치한다.
+# rescheck(resource_checker)와 instsched(instance_scheduler)를 각각 독립 모듈로
+# 빌드해 /usr/local/bin (PATH)에 설치한다. 두 모듈은 서로 다른 go.mod를 갖는
+# 완전히 독립된 Go 모듈이므로 각자의 디렉토리에서 개별적으로 빌드한다.
 set -euo pipefail
 
-BINARY_NAME="rescheck"
 VERSION="${VERSION:-v1.0.0}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-MODULE="github.com/opp-13/nhn_iac"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -15,11 +15,8 @@ if ! command -v go >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> ${BINARY_NAME} ${VERSION} 빌드 중..."
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
-go build -ldflags "-X '${MODULE}/resource_checker/cli.version=${VERSION}'" \
-  -o "${BUILD_DIR}/${BINARY_NAME}" .
 
 if [ -w "$INSTALL_DIR" ]; then
   SUDO=""
@@ -27,11 +24,26 @@ else
   SUDO="sudo"
 fi
 
-echo "==> ${INSTALL_DIR}/${BINARY_NAME} 설치 중 (${SUDO:-no sudo})..."
-${SUDO} mkdir -p "$INSTALL_DIR"
-${SUDO} install -m 755 "${BUILD_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+# build_binary <module_dir> <binary_name> <version_ldflags_path>
+build_binary() {
+  local module_dir="$1" binary_name="$2" version_pkg="$3"
 
-echo "==> 설치 완료: $(command -v "$BINARY_NAME" 2>/dev/null || echo "${INSTALL_DIR}/${BINARY_NAME}")"
+  echo "==> ${binary_name} ${VERSION} 빌드 중 (${module_dir})..."
+  (
+    cd "${SCRIPT_DIR}/${module_dir}"
+    go build -ldflags "-X '${version_pkg}.version=${VERSION}'" \
+      -o "${BUILD_DIR}/${binary_name}" .
+  )
+
+  echo "==> ${INSTALL_DIR}/${binary_name} 설치 중 (${SUDO:-no sudo})..."
+  ${SUDO} mkdir -p "$INSTALL_DIR"
+  ${SUDO} install -m 755 "${BUILD_DIR}/${binary_name}" "${INSTALL_DIR}/${binary_name}"
+}
+
+build_binary "resource_checker" "rescheck" "github.com/opp-13/nhn_iac/resource_checker/cli"
+build_binary "instance_scheduler" "instsched" "github.com/opp-13/nhn_iac/instance_scheduler/cli"
+
+echo "==> 설치 완료: ${INSTALL_DIR}/rescheck, ${INSTALL_DIR}/instsched"
 
 case ":$PATH:" in
   *":${INSTALL_DIR}:"*) ;;
@@ -42,4 +54,5 @@ case ":$PATH:" in
     ;;
 esac
 
-"${INSTALL_DIR}/${BINARY_NAME}" --version
+"${INSTALL_DIR}/rescheck" --version
+"${INSTALL_DIR}/instsched" --version

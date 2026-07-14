@@ -1,23 +1,34 @@
 # CLAUDE.md
 
-NHN Cloud 관리 도구 모음 (Go 단일 바이너리, 모듈형 구조). 초기 개발 단계.
+NHN Cloud 관리 도구 모음 (모듈형 구조). 초기 개발 단계.
 
 ## 명령어
 
+각 모듈은 독립된 Go 모듈이다 (자체 `go.mod`/`go.sum`/`main.go`) — 반드시 해당 폴더에서 빌드한다.
+
 ```bash
-go build ./...   # 빌드
-go run .         # 실행
-go test ./...    # 테스트
+cd resource_checker && go build ./...        # rescheck 바이너리 빌드
+cd resource_checker && go run . <args>       # 실행
+cd resource_checker && go test ./...         # 테스트
+
+cd instance_scheduler && go build ./...      # instsched 바이너리 빌드
+cd instance_scheduler && go test ./...       # 테스트
 ```
 
 ## 모듈 구조
 
-- `resource_checker/` — NHN Cloud 리소스 조회 (읽기 전용, GET 요청만 허용)
+- `resource_checker/` — NHN Cloud 리소스 조회 (읽기 전용, GET 요청만 허용). `rescheck` 바이너리.
 - `auto_remove_resource/` — 리소스 자동 정리
   - `nhn/` — NHN Cloud 구현 (현재 대상)
   - `aws/` — AWS 지원 예정 (미구현)
+- `instance_scheduler/` — 인스턴스별로 설정한 시각(cron 스케줄)에 그 인스턴스가 존재/실행
+  중임을 보장 (정지면 시작, 삭제면 terraform 설정된 경우에만 재생성). `instsched` 바이너리.
 
 새 클라우드 지원은 `auto_remove_resource/<provider>/` 형태로 추가한다.
+
+모듈 간에는 Go 패키지를 import하지 않는다 — 완전히 독립적으로 빌드/실행되며, 서로 필요하면
+빌드된 CLI 바이너리를 서브프로세스로 호출한다 (예: `instance_scheduler`는 PATH의 `rescheck`를
+호출). 새 provider/모듈을 추가할 때도 이 원칙을 따른다.
 
 ## 설정 규칙
 
