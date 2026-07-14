@@ -5,16 +5,44 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	// DefaultPath is used when the caller doesn't override --config.
+	// DefaultPath is used when the caller doesn't override --config and
+	// FindConfigPath doesn't find a config.yaml anywhere above the current
+	// directory (e.g. a fresh setup with no config file yet).
 	DefaultPath = "./config.yaml"
 	// DefaultRegion is used when nhn.auth.region is absent from config.yaml.
 	DefaultRegion = "KR1"
 )
+
+// FindConfigPath looks for a file named "config.yaml" starting in the
+// current working directory and walking up through parent directories, so
+// rescheck finds the repo's shared config.yaml even when run from a
+// subdirectory (e.g. `go run .` inside resource_checker/ itself, one level
+// below where config.yaml actually lives). If none is found by the
+// filesystem root, it falls back to DefaultPath so Load's "missing file"
+// branch still applies for a genuinely fresh setup.
+func FindConfigPath() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return DefaultPath
+	}
+	for {
+		candidate := filepath.Join(dir, "config.yaml")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return DefaultPath
+		}
+		dir = parent
+	}
+}
 
 type Auth struct {
 	TenantID string `yaml:"tenantId"`

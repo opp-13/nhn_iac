@@ -49,7 +49,7 @@ func runConfigureSet(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&region, "region", "", "")
 	fs.StringVar(&username, "username", "", "")
 	fs.StringVar(&password, "password", "", "")
-	fs.StringVar(&configPath, "config", config.DefaultPath, "")
+	fs.StringVar(&configPath, "config", config.FindConfigPath(), "")
 
 	if err := fs.Parse(args); err != nil {
 		return helpOrError(err, stdout, stderr, configureSetHelp)
@@ -77,9 +77,9 @@ func runConfigureSet(args []string, stdout, stderr io.Writer) int {
 	stdin := bufio.NewReader(os.Stdin)
 
 	if !configPathProvided {
-		// configPath already holds config.DefaultPath (the flag's default);
-		// an empty answer here just keeps it, so pressing Enter means "use
-		// the default" rather than "no config file".
+		// configPath already holds config.FindConfigPath()'s result (the
+		// flag's default); an empty answer here just keeps it, so pressing
+		// Enter means "use the default" rather than "no config file".
 		line, err := promptLine(stdout, stdin, fmt.Sprintf("Config file path (default: %s): ", configPath))
 		if err != nil {
 			fmt.Fprintf(stderr, "rescheck configure set: config 경로를 입력받을 수 없습니다 (--config를 직접 전달하세요): %v\n", err)
@@ -151,7 +151,7 @@ func runConfigureShow(args []string, stdout, stderr io.Writer) int {
 	var format, configPath string
 	fs.StringVar(&format, "o", output.FormatTable, "")
 	fs.StringVar(&format, "output", output.FormatTable, "")
-	fs.StringVar(&configPath, "config", config.DefaultPath, "")
+	fs.StringVar(&configPath, "config", config.FindConfigPath(), "")
 
 	if err := fs.Parse(args); err != nil {
 		return helpOrError(err, stdout, stderr, configureShowHelp)

@@ -69,7 +69,7 @@ func networkFlags(name string) (fs *flag.FlagSet, long *bool, format, configPath
 	fs.BoolVar(long, "long", false, "")
 	fs.StringVar(format, "o", output.FormatTable, "")
 	fs.StringVar(format, "output", output.FormatTable, "")
-	fs.StringVar(configPath, "config", config.DefaultPath, "")
+	fs.StringVar(configPath, "config", config.FindConfigPath(), "")
 	return fs, long, format, configPath
 }
 

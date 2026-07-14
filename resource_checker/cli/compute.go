@@ -71,7 +71,7 @@ func runComputeDescInstance(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&long, "long", false, "")
 	fs.StringVar(&format, "o", output.FormatTable, "")
 	fs.StringVar(&format, "output", output.FormatTable, "")
-	fs.StringVar(&configPath, "config", config.DefaultPath, "")
+	fs.StringVar(&configPath, "config", config.FindConfigPath(), "")
 
 	if err := fs.Parse(expandShortBoolFlags(args, "al")); err != nil {
 		return helpOrError(err, stdout, stderr, computeDescInstanceHelp)
@@ -196,7 +196,7 @@ func runComputePower(args []string, action powerAction, stdout, stderr io.Writer
 	var configPath string
 	fs.BoolVar(&yes, "y", false, "")
 	fs.BoolVar(&yes, "yes", false, "")
-	fs.StringVar(&configPath, "config", config.DefaultPath, "")
+	fs.StringVar(&configPath, "config", config.FindConfigPath(), "")
 
 	// The stdlib flag package stops at the first positional argument, but
 	// "rescheck compute shutdown 'test*' -y" (flag after the target) should
