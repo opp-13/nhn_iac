@@ -74,7 +74,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "-v", "--version":
 		fmt.Fprintf(stdout, "rescheck %s\n", version)
 		return 0
-	case "configure", "conf":
+	case "configure", "config", "conf":
 		return runConfigure(args[1:], stdout, stderr)
 	case "compute", "com":
 		return runCompute(args[1:], stdout, stderr)
