@@ -21,29 +21,44 @@ const (
 	DefaultRegion = "KR1"
 )
 
+// homeConfigRelPath is the fixed default location (relative to the user's
+// home directory) used once no existing config.yaml is found by walking up
+// from the current directory. Unlike the cwd search, this path is returned
+// whether or not the file exists yet, matching resource_checker/config's
+// FindConfigPath — the two are meant to agree on the same default so both
+// binaries share one config.yaml regardless of which directory they're run
+// from (e.g. via cron).
+const homeConfigRelPath = ".config/nhn_iac/config.yaml"
+
 // FindConfigPath looks for a file named "config.yaml" starting in the
 // current working directory and walking up through parent directories, so
-// instsched finds the repo's shared config.yaml even when run from a
+// instsched finds a repo checkout's config.yaml even when run from a
 // subdirectory (e.g. `go run .` inside instance_scheduler/ itself, one
 // level below where config.yaml actually lives). If none is found by the
-// filesystem root, it falls back to DefaultPath so Load's "missing file"
-// branch still applies for a genuinely fresh setup.
+// filesystem root, it defaults to ~/.config/nhn_iac/config.yaml (Load's
+// "missing file" branch applies if it doesn't exist yet). Only if the home
+// directory itself can't be determined does it fall back to DefaultPath.
 func FindConfigPath() string {
 	dir, err := os.Getwd()
-	if err != nil {
-		return DefaultPath
-	}
-	for {
-		candidate := filepath.Join(dir, "config.yaml")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
+	if err == nil {
+		for {
+			candidate := filepath.Join(dir, "config.yaml")
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return DefaultPath
-		}
-		dir = parent
 	}
+
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, filepath.FromSlash(homeConfigRelPath))
+	}
+
+	return DefaultPath
 }
 
 type Auth struct {

@@ -13,7 +13,15 @@ Go 코드를 공유하지 않고, 빌드된 `rescheck` 바이너리를 PATH에�
 ## 설정 (config.yaml)
 
 `resource_checker`와 같은 `config.yaml` 파일의 `nhn.auth`(공유) + `nhn.Instancescheduler` 키를
-읽는다. 인스턴스마다 개별 스케줄과 terraform 복구 가능 여부를 갖는다:
+읽는다. 인스턴스마다 개별 스케줄과 terraform 복구 가능 여부를 갖는다.
+
+**config.yaml을 찾는 순서** (`--config`로 직접 지정하지 않은 경우):
+1. 현재 디렉토리부터 부모 디렉토리로 거슬러 올라가며 `config.yaml` 탐색 (저장소 안에서
+   `go run .`처럼 로컬 개발할 때 어느 하위 폴더에서 실행해도 자동으로 찾힘)
+2. 위에서 못 찾으면 `~/.config/nhn_iac/config.yaml`을 기본값으로 사용한다 (`rescheck
+   configure set`을 처음 실행할 때도 이 경로에 새로 생성됨 — `resource_checker/README.md`
+   참고). 어느 디렉토리에서 `instsched`/`rescheck`를 실행하든(cron이 어떤 cwd로 실행하든)
+   항상 같은 config를 찾는다.
 
 ```yaml
 nhn:

@@ -19,29 +19,45 @@ const (
 	DefaultRegion = "KR1"
 )
 
+// homeConfigRelPath is the fixed default location (relative to the user's
+// home directory) used once no existing config.yaml is found by walking up
+// from the current directory. Unlike the cwd search, this path is returned
+// whether or not the file exists yet — it's the canonical place a fresh
+// `rescheck configure set` should write to, so every later invocation (from
+// any directory, e.g. via cron) finds the same file.
+const homeConfigRelPath = ".config/nhn_iac/config.yaml"
+
 // FindConfigPath looks for a file named "config.yaml" starting in the
 // current working directory and walking up through parent directories, so
-// rescheck finds the repo's shared config.yaml even when run from a
+// rescheck finds a repo checkout's config.yaml even when run from a
 // subdirectory (e.g. `go run .` inside resource_checker/ itself, one level
 // below where config.yaml actually lives). If none is found by the
-// filesystem root, it falls back to DefaultPath so Load's "missing file"
-// branch still applies for a genuinely fresh setup.
+// filesystem root, it defaults to ~/.config/nhn_iac/config.yaml — this is
+// the fallback used both to read (Load's "missing file" branch applies if
+// it doesn't exist yet) and to write (a first-time `configure set`). Only
+// if the home directory itself can't be determined does it fall back to
+// DefaultPath.
 func FindConfigPath() string {
 	dir, err := os.Getwd()
-	if err != nil {
-		return DefaultPath
-	}
-	for {
-		candidate := filepath.Join(dir, "config.yaml")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
+	if err == nil {
+		for {
+			candidate := filepath.Join(dir, "config.yaml")
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return DefaultPath
-		}
-		dir = parent
 	}
+
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, filepath.FromSlash(homeConfigRelPath))
+	}
+
+	return DefaultPath
 }
 
 type Auth struct {
@@ -125,6 +141,13 @@ func SaveAuth(path string, raw map[string]any, tenantID, region, username, passw
 	out, err := yaml.Marshal(raw)
 	if err != nil {
 		return fmt.Errorf("config 직렬화 실패: %w", err)
+	}
+	// The default path is now ~/.config/nhn_iac/config.yaml (see
+	// FindConfigPath), which won't exist yet on a first-time setup.
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("config 디렉토리 생성 실패 (%s): %w", dir, err)
+		}
 	}
 	// 0o600: this file holds a plaintext credential.
 	if err := os.WriteFile(path, out, 0o600); err != nil {
