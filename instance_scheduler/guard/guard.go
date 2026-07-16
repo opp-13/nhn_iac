@@ -64,6 +64,7 @@ type Action string
 const (
 	ActionOK            Action = "OK"
 	ActionStarted       Action = "STARTED"
+	ActionStopped       Action = "STOPPED"
 	ActionRecreated     Action = "RECREATED"
 	ActionSkippedStatus Action = "SKIPPED"
 	// ActionSkippedDeleted marks an instance that's missing from the cloud
@@ -169,16 +170,83 @@ func Check(ctx context.Context, cfg *config.Config, configPath, targetName strin
 	return Result{Instances: results}, nil
 }
 
+// Stop checks configured instances and shuts down any that are ACTIVE — the
+// mirror of Check, used for a stopSchedule (e.g. powering instances off
+// outside business hours). Target resolution (targetName empty vs. one
+// instance) works the same as Check. Terraform is never consulted here:
+// stopping has nothing to do with recreate-on-delete.
+func Stop(ctx context.Context, cfg *config.Config, configPath, targetName string, run Runner) (Result, error) {
+	if run == nil {
+		run = defaultRunner
+	}
+
+	targets := cfg.Nhn.Instancescheduler.Instances
+	if targetName != "" {
+		inst, ok := cfg.FindInstance(targetName)
+		if !ok {
+			return Result{}, fmt.Errorf("설정에 없는 인스턴스입니다: %q", targetName)
+		}
+		targets = []config.Instance{inst}
+	}
+
+	instances, err := listInstances(ctx, run, configPath)
+	if err != nil {
+		return Result{}, err
+	}
+	byName := make(map[string]instanceJSON, len(instances))
+	for _, inst := range instances {
+		byName[inst.Name] = inst
+	}
+
+	var results []InstanceResult
+	for _, target := range targets {
+		inst, ok := byName[target.Name]
+		switch {
+		case !ok:
+			// Nothing to stop.
+			results = append(results, InstanceResult{Name: target.Name, Action: ActionSkippedDeleted})
+		case inst.Status == "ACTIVE":
+			if _, err := stopInstance(ctx, run, configPath, target.Name); err != nil {
+				results = append(results, InstanceResult{Name: target.Name, Action: ActionError, Detail: err.Error()})
+			} else {
+				results = append(results, InstanceResult{Name: target.Name, Action: ActionStopped})
+			}
+		case inst.Status == "SHUTOFF":
+			results = append(results, InstanceResult{Name: target.Name, Action: ActionOK})
+		default:
+			results = append(results, InstanceResult{Name: target.Name, Action: ActionSkippedStatus, Detail: inst.Status})
+		}
+	}
+
+	return Result{Instances: results}, nil
+}
+
+// homeTerraformDirRelPath is the fixed fallback location (relative to the
+// user's home directory) used when terraformDir is left unset in
+// config.yaml. Mirrors config.FindConfigPath's ~/.config/nhn_iac/config.yaml
+// default — without this, an empty terraformDir would fall through to
+// exec.Cmd's "empty Dir means the process's current directory" behavior,
+// exposing terraform apply to the same unpredictable-cron-cwd problem
+// config.yaml itself used to have.
+const homeTerraformDirRelPath = ".config/nhn_iac/instance_scheduler/terraform"
+
 // resolveTerraformDir anchors a relative terraformDir to the directory
 // containing config.yaml rather than the process's current directory —
 // cron's cwd is unpredictable, but config.yaml's location (found via
 // config.FindConfigPath or an explicit --config) is known. An absolute
-// terraformDir is returned unchanged.
+// terraformDir is returned unchanged. If terraformDir is empty, it defaults
+// to ~/.config/nhn_iac/instance_scheduler/terraform.
 func resolveTerraformDir(terraformDir, configPath string) string {
-	if terraformDir == "" || filepath.IsAbs(terraformDir) {
+	if filepath.IsAbs(terraformDir) {
 		return terraformDir
 	}
-	return filepath.Join(filepath.Dir(configPath), terraformDir)
+	if terraformDir != "" {
+		return filepath.Join(filepath.Dir(configPath), terraformDir)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, filepath.FromSlash(homeTerraformDirRelPath))
+	}
+	return terraformDir
 }
 
 func listInstances(ctx context.Context, run Runner, configPath string) ([]instanceJSON, error) {
@@ -195,6 +263,10 @@ func listInstances(ctx context.Context, run Runner, configPath string) ([]instan
 
 func startInstance(ctx context.Context, run Runner, configPath, name string) ([]byte, error) {
 	return run(ctx, "", nil, "rescheck", "compute", "run", name, "--config", configPath)
+}
+
+func stopInstance(ctx context.Context, run Runner, configPath, name string) ([]byte, error) {
+	return run(ctx, "", nil, "rescheck", "compute", "shutdown", name, "--config", configPath)
 }
 
 func applyTerraform(ctx context.Context, run Runner, dir string, auth *config.Auth) ([]byte, error) {

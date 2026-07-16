@@ -68,14 +68,18 @@ type Auth struct {
 	Password string `yaml:"password"`
 }
 
-// Instance is one protected instance: schedule says when it must exist
-// (a cron expression), and Terraform says whether a deleted instance may be
-// recreated via `terraform apply` in TerraformDir. When Terraform is false,
-// a deleted instance is only reported, never recreated.
+// Instance is one scheduled instance. StartSchedule is a cron expression
+// saying when it must exist/be running ("check" heals it if not).
+// StopSchedule is an optional cron expression saying when it should be shut
+// down (e.g. outside business hours); leave it empty to only ever start/heal
+// and never auto-stop. Terraform says whether a deleted instance may be
+// recreated via `terraform apply` in TerraformDir — when false, a deleted
+// instance is only reported, never recreated.
 type Instance struct {
-	Name      string `yaml:"name"`
-	Schedule  string `yaml:"schedule"`
-	Terraform bool   `yaml:"terraform"`
+	Name          string `yaml:"name"`
+	StartSchedule string `yaml:"startSchedule"`
+	StopSchedule  string `yaml:"stopSchedule"`
+	Terraform     bool   `yaml:"terraform"`
 }
 
 type Instancescheduler struct {

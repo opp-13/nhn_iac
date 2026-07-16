@@ -31,6 +31,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "check":
 		return runCheck(args[1:], stdout, stderr)
+	case "stop":
+		return runStop(args[1:], stdout, stderr)
 	case "schedule":
 		return runSchedule(args[1:], stdout, stderr)
 	default:
@@ -97,6 +99,56 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "%s: %s (자동 조치 대상 아님)\n", ir.Name, ir.Detail)
 		case guard.ActionSkippedDeleted:
 			fmt.Fprintf(stdout, "%s: DELETED (terraform 미설정 — 복구하지 않음)\n", ir.Name)
+		case guard.ActionError:
+			fmt.Fprintf(stderr, "%s: 오류 - %s\n", ir.Name, ir.Detail)
+			code = 1
+		}
+	}
+	return code
+}
+
+func runStop(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("stop", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var configPath, instance string
+	fs.StringVar(&configPath, "config", config.FindConfigPath(), "")
+	fs.StringVar(&instance, "instance", "", "")
+
+	if err := fs.Parse(args); err != nil {
+		return helpOrError(err, stdout, stderr, stopHelp)
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if !cfg.Nhn.Instancescheduler.Enabled {
+		fmt.Fprintln(stdout, "instsched: 비활성화됨 (nhn.Instancescheduler.enabled: false)")
+		return 0
+	}
+	if len(cfg.Nhn.Instancescheduler.Instances) == 0 {
+		fmt.Fprintln(stdout, "instsched: 설정된 인스턴스가 없습니다 (nhn.Instancescheduler.instances)")
+		return 0
+	}
+
+	result, err := guard.Stop(context.Background(), cfg, configPath, instance, nil)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+
+	code := 0
+	for _, ir := range result.Instances {
+		switch ir.Action {
+		case guard.ActionOK:
+			fmt.Fprintf(stdout, "%s: 이미 정지됨\n", ir.Name)
+		case guard.ActionStopped:
+			fmt.Fprintf(stdout, "%s: ACTIVE -> stopped\n", ir.Name)
+		case guard.ActionSkippedDeleted:
+			fmt.Fprintf(stdout, "%s: 삭제된 인스턴스 — 정지할 대상 없음\n", ir.Name)
+		case guard.ActionSkippedStatus:
+			fmt.Fprintf(stdout, "%s: %s (자동 조치 대상 아님)\n", ir.Name, ir.Detail)
 		case guard.ActionError:
 			fmt.Fprintf(stderr, "%s: 오류 - %s\n", ir.Name, ir.Detail)
 			code = 1
@@ -190,7 +242,7 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	for _, e := range entries {
-		fmt.Fprintf(stdout, "%s\t%s\n", e.Name, e.Schedule)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\n", e.Name, e.Kind, e.Schedule)
 	}
 	return 0
 }

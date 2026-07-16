@@ -1,9 +1,14 @@
 # 인스턴스 스케줄러 (instsched)
 
-인스턴스마다 설정한 시각(cron 스케줄)에 그 NHN Cloud 인스턴스가 존재/실행 중임을 보장한다.
-- 정지됨(SHUTOFF) → `rescheck compute run`으로 재시작
-- 삭제됨 → `terraform: true`로 설정한 인스턴스만 Terraform으로 재생성 (기존 VPC/subnet 재사용).
-  `terraform: false`면 복구하지 않고 로그만 남기고 넘어간다.
+인스턴스마다 설정한 시각(cron 스케줄)에 그 NHN Cloud 인스턴스가 존재/실행 중임을 보장하고
+(`startSchedule`), 선택적으로 다른 시각엔 자동으로 정지시킨다(`stopSchedule`) — 예를 들어
+업무시간(10~19시)에만 떠있게 해서 비용을 아끼는 용도.
+
+- **정지됨(SHUTOFF)** → `rescheck compute run`으로 재시작 (`check`, `startSchedule`에 등록)
+- **삭제됨** → `terraform: true`로 설정한 인스턴스만 Terraform으로 재생성 (기존 VPC/subnet
+  재사용). `terraform: false`면 복구하지 않고 로그만 남기고 넘어간다 (`check`)
+- **떠있음(ACTIVE)인데 정지시켜야 할 시각** → `rescheck compute shutdown`으로 정지
+  (`stop`, `stopSchedule`에 등록 — 설정 안 하면 이 동작은 아예 없음)
 
 이 모듈은 `resource_checker/`와 완전히 독립된 Go 모듈이다 (자체 `go.mod`/`go.sum`/`main.go`).
 Go 코드를 공유하지 않고, 빌드된 `rescheck` 바이너리를 PATH에서 서브프로세스로 호출해
@@ -37,17 +42,27 @@ nhn:
     terraformDir: ./instance_scheduler/terraform
     instances:
       - name: my-web-01
-        schedule: "0 9 * * *"        # 매일 09:00에는 있어야 함
+        startSchedule: "0 9 * * *"    # 매일 09:00에는 있어야 함 (계속 떠있어도 됨 — stopSchedule 없음)
         terraform: true               # 삭제됐어도 terraform apply로 복구 가능
       - name: my-worker-01
-        schedule: "*/30 9-18 * * *"
+        startSchedule: "*/30 9-18 * * *"
         terraform: false              # 삭제됐으면 복구하지 않고 로그만 남김
+      - name: my-batch-01
+        startSchedule: "*/10 10-18 * * *"   # 10~18시대엔 계속 떠있는지 점검/복구
+        stopSchedule: "0 19 * * *"            # 19시에 자동 정지 (비용 절감)
+        terraform: true
 ```
 
-`schedule`은 cron 표현식(`분 시 일 월 요일`)이다 — **범위가 아니라 특정 시점**을 뜻한다.
-`"0 9 * * *"`는 "0시~9시 사이에 떠있어야 함"이 아니라 "매일 09:00 정각에 딱 한 번 점검한다"는
-뜻이다. 특정 시간대 내내 떠있는지 계속 확인하려면 `"*/10 9-18 * * *"`(9~18시 사이 10분마다)처럼
-범위와 반복 주기를 조합해야 한다.
+`startSchedule`/`stopSchedule`은 cron 표현식(`분 시 일 월 요일`)이다 — **범위가 아니라
+특정 시점**을 뜻한다. `"0 9 * * *"`는 "0시~9시 사이에 떠있어야 함"이 아니라 "매일 09:00
+정각에 딱 한 번 점검(또는 정지)한다"는 뜻이다.
+
+`stopSchedule`은 선택 항목이다 — 비워두면(생략) 지금까지처럼 "계속 떠있어야 함"만 관리하고
+자동 정지는 하지 않는다. **"업무시간에만 떠있게"** 하려면 `startSchedule`을 범위+반복으로
+주고(`"*/10 10-18 * * *"` = 10~18시 사이 10분마다 점검/복구) `stopSchedule`을 정지 시각
+하나로 준다(`"0 19 * * *"` = 19시에 정지). `startSchedule`이 다시 도는 10시가 되기 전까지는
+`stopSchedule` 이후 아무도 상태를 건드리지 않으니, 그 사이 삭제/재부팅 같은 이슈가 있어도
+다음 `startSchedule` 시각에 감지/복구된다.
 
 `terraform: true`인 인스턴스 이름은 `terraform/terraform.tfvars`의 `instances` map key와
 정확히 일치해야 한다 (같은 이름으로 클라우드 상태와 terraform 정의를 매칭한다).
@@ -79,17 +94,18 @@ terraform init
 ## CLI 사용법
 
 ```bash
-instsched check [--instance NAME] [--config PATH]   # 1회 점검+복구
-instsched schedule add <NAME> [--config PATH]        # crontab에 등록/갱신
-instsched schedule remove <NAME>                     # crontab에서 제거
+instsched check [--instance NAME] [--config PATH]   # 1회 점검+복구 (startSchedule이 호출)
+instsched stop [--instance NAME] [--config PATH]     # ACTIVE면 정지 (stopSchedule이 호출)
+instsched schedule add <NAME> [--config PATH]        # crontab에 등록/갱신 (start + stop)
+instsched schedule remove <NAME>                     # crontab에서 제거 (start + stop 둘 다)
 instsched schedule list                              # 등록된 스케줄 목록
 instsched -h / --help
 instsched -v / --version
 ```
 
-`check --instance NAME`은 그 인스턴스 하나만 점검한다 (`schedule add`가 등록하는 crontab
-항목이 실제로 쓰는 형태). `--instance` 없이 실행하면 설정된 인스턴스 전체를 한 번에
-점검한다 (수동 확인/테스트용).
+`check`/`stop` 둘 다 `--instance NAME`을 주면 그 인스턴스 하나만 처리한다 (`schedule add`가
+등록하는 crontab 항목이 실제로 쓰는 형태). `--instance` 없이 실행하면 설정된 인스턴스
+전체를 한 번에 처리한다 (수동 확인/테스트용).
 
 `check`는 사람이 읽기 쉬운 결과를 출력한다:
 
@@ -98,6 +114,13 @@ my-web-01: OK
 my-worker-01: STOPPED -> started
 my-db-01: DELETED -> terraform apply 완료
 my-batch-01: DELETED (terraform 미설정 — 복구하지 않음)
+```
+
+`stop`도 마찬가지 형태로 출력한다:
+
+```
+my-batch-01: ACTIVE -> stopped
+my-web-01: 이미 정지됨
 ```
 
 인스턴스별 조치가 하나라도 실패하면 exit code 1을 반환한다. `enabled: false`거나
@@ -109,10 +132,13 @@ my-batch-01: DELETED (terraform 미설정 — 복구하지 않음)
 등록/삭제한다 (다른 crontab 라인은 건드리지 않음 — 마커 주석으로 관리 항목만 식별):
 
 ```bash
-instsched schedule add my-web-01     # config.yaml의 schedule 값으로 crontab에 등록
-instsched schedule list              # 현재 등록된 항목 확인
-instsched schedule remove my-web-01  # 제거
+instsched schedule add my-batch-01     # startSchedule → check, stopSchedule(있으면) → stop, 둘 다 등록
+instsched schedule list                # 현재 등록된 항목 확인 (이름/종류(start·stop)/스케줄)
+instsched schedule remove my-batch-01  # start + stop 둘 다 제거
 ```
+
+`stopSchedule`을 config.yaml에 안 적었으면 `schedule add`는 `start` 항목만 등록한다
+(자동 정지 없이 계속 떠있게만 관리).
 
 **crontab 권한**: 일반 사용자 권한으로 자신의 crontab을 등록/조회하는 것은 보통 문제
 없지만, 실행 계정에 crontab 사용 권한이 없는 환경(일부 컨테이너/제한된 서버)에서는

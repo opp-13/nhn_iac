@@ -22,7 +22,7 @@ func testConfig(instances ...config.Instance) *config.Config {
 }
 
 func inst(name string, terraform bool) config.Instance {
-	return config.Instance{Name: name, Schedule: "0 9 * * *", Terraform: terraform}
+	return config.Instance{Name: name, StartSchedule: "0 9 * * *", Terraform: terraform}
 }
 
 func TestCheck_ActiveInstanceIsNoOp(t *testing.T) {
@@ -198,6 +198,82 @@ func TestCheck_UnknownTargetNameIsError(t *testing.T) {
 	}
 
 	if _, err := Check(context.Background(), cfg, "config.yaml", "does-not-exist", run); err == nil {
+		t.Fatal("expected an error for an unconfigured instance name")
+	}
+}
+
+func TestStop_ActiveInstanceIsStopped(t *testing.T) {
+	cfg := testConfig(inst("web-01", true))
+	var stopCalled bool
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+		if name == "rescheck" && len(args) > 0 && args[0] == "compute" && args[1] == "shutdown" {
+			stopCalled = true
+			if args[2] != "web-01" {
+				t.Fatalf("expected stop target web-01, got %v", args)
+			}
+			return nil, nil
+		}
+		return []byte(`[{"name":"web-01","status":"ACTIVE"}]`), nil
+	}
+
+	result, err := Stop(context.Background(), cfg, "config.yaml", "", run)
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if !stopCalled {
+		t.Fatal("expected rescheck compute shutdown to be called")
+	}
+	if len(result.Instances) != 1 || result.Instances[0].Action != ActionStopped {
+		t.Fatalf("expected ActionStopped, got %+v", result.Instances)
+	}
+}
+
+func TestStop_AlreadyStoppedIsOK(t *testing.T) {
+	cfg := testConfig(inst("web-01", true))
+	var stopCalled bool
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+		if name == "rescheck" && len(args) > 0 && args[0] == "compute" && args[1] == "shutdown" {
+			stopCalled = true
+			return nil, nil
+		}
+		return []byte(`[{"name":"web-01","status":"SHUTOFF"}]`), nil
+	}
+
+	result, err := Stop(context.Background(), cfg, "config.yaml", "", run)
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if stopCalled {
+		t.Fatal("expected rescheck compute shutdown NOT to be called for an already-stopped instance")
+	}
+	if len(result.Instances) != 1 || result.Instances[0].Action != ActionOK {
+		t.Fatalf("expected ActionOK, got %+v", result.Instances)
+	}
+}
+
+func TestStop_DeletedInstanceHasNothingToStop(t *testing.T) {
+	cfg := testConfig(inst("web-01", true))
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+		return []byte(`[]`), nil
+	}
+
+	result, err := Stop(context.Background(), cfg, "config.yaml", "", run)
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if len(result.Instances) != 1 || result.Instances[0].Action != ActionSkippedDeleted {
+		t.Fatalf("expected ActionSkippedDeleted, got %+v", result.Instances)
+	}
+}
+
+func TestStop_UnknownTargetNameIsError(t *testing.T) {
+	cfg := testConfig(inst("web-01", true))
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+		t.Fatal("run should not be called when the target name is invalid")
+		return nil, nil
+	}
+
+	if _, err := Stop(context.Background(), cfg, "config.yaml", "does-not-exist", run); err == nil {
 		t.Fatal("expected an error for an unconfigured instance name")
 	}
 }

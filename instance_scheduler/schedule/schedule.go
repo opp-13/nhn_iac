@@ -1,8 +1,9 @@
 // Package schedule manages the current user's crontab entries that trigger
-// `instsched check --instance <name>` at each instance's configured
-// schedule. Entries are tagged with a marker comment so they can be found,
-// replaced, or removed without disturbing any other crontab lines the user
-// manages themselves.
+// `instsched check --instance <name>` (and, if configured, `instsched stop
+// --instance <name>`) at each instance's configured schedule(s). Entries
+// are tagged with a marker comment so they can be found, replaced, or
+// removed without disturbing any other crontab lines the user manages
+// themselves.
 package schedule
 
 import (
@@ -19,7 +20,8 @@ import (
 )
 
 // markerPrefix tags a comment line immediately above a crontab line this
-// package manages, so Add/Remove/List can find their own entries among
+// package manages: "<markerPrefix><name>:<kind>", kind being "start" or
+// "stop". Add/Remove/List use this to find their own entries among
 // whatever else is in the user's crontab.
 const markerPrefix = "# instsched:managed:"
 
@@ -46,9 +48,10 @@ func defaultRunner(ctx context.Context, stdin string, name string, args ...strin
 	return out.Bytes(), nil
 }
 
-// Entry is one managed crontab line.
+// Entry is one managed crontab line. Kind is "start" or "stop".
 type Entry struct {
 	Name     string
+	Kind     string
 	Schedule string
 	Command  string
 }
@@ -79,13 +82,17 @@ func writeCrontab(ctx context.Context, run Runner, lines []string) error {
 	return err
 }
 
-// stripManaged removes any existing marker+command pair for name from
-// lines, returning the remaining lines.
+func marker(name, kind string) string {
+	return markerPrefix + name + ":" + kind
+}
+
+// stripManaged removes every existing marker+command pair for name (both
+// "start" and "stop" kinds) from lines, returning the remaining lines.
 func stripManaged(lines []string, name string) []string {
-	marker := markerPrefix + name
+	prefix := markerPrefix + name + ":"
 	kept := make([]string, 0, len(lines))
 	for i := 0; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == marker {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), prefix) {
 			i++ // also drop the command line right after the marker
 			continue
 		}
@@ -102,16 +109,17 @@ func stripManaged(lines []string, name string) []string {
 // and won't include /usr/local/bin.
 const cronFallbackPath = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
 
-// Add installs (or replaces) the crontab entry for the instance named name,
-// using its configured schedule. The generated command uses absolute paths
-// for both the instsched binary and configPath, since cron runs jobs with a
-// minimal environment that can't be relied on to resolve relative paths or
-// a bare "instsched" via PATH. It also prefixes the command with an
-// explicit PATH= assignment (POSIX sh, which cron uses to run the command,
-// honors a leading "VAR=val" for that one invocation) so that check's
-// internal "rescheck"/"terraform" subprocess calls — looked up by bare name
-// via the job's own PATH, not instsched's — can still find them even under
-// cron's minimal default PATH.
+// Add installs (or replaces) the crontab entry/entries for the instance
+// named name: a "start" entry (always, at StartSchedule, running `instsched
+// check`) and, if StopSchedule is set, a "stop" entry (running `instsched
+// stop`). The generated commands use absolute paths for both the instsched
+// binary and configPath, since cron runs jobs with a minimal environment
+// that can't be relied on to resolve relative paths or a bare "instsched"
+// via PATH. Each is also prefixed with an explicit PATH= assignment (POSIX
+// sh, which cron uses to run the command, honors a leading "VAR=val" for
+// that one invocation) so that check/stop's internal "rescheck"/"terraform"
+// subprocess calls — looked up by bare name via the job's own PATH, not
+// instsched's — can still find them even under cron's minimal default PATH.
 func Add(ctx context.Context, run Runner, cfg *config.Config, configPath, name string) error {
 	if run == nil {
 		run = defaultRunner
@@ -121,8 +129,8 @@ func Add(ctx context.Context, run Runner, cfg *config.Config, configPath, name s
 	if !ok {
 		return fmt.Errorf("설정에 없는 인스턴스입니다: %q", name)
 	}
-	if inst.Schedule == "" {
-		return fmt.Errorf("인스턴스 %q에 schedule이 설정되어 있지 않습니다", name)
+	if inst.StartSchedule == "" {
+		return fmt.Errorf("인스턴스 %q에 startSchedule이 설정되어 있지 않습니다", name)
 	}
 
 	exe, err := os.Executable()
@@ -140,14 +148,18 @@ func Add(ctx context.Context, run Runner, cfg *config.Config, configPath, name s
 		return err
 	}
 	lines = stripManaged(lines, name)
-	lines = append(lines, markerPrefix+name,
-		fmt.Sprintf("%s PATH=%s %s check --instance %s --config %s", inst.Schedule, cronPath, exe, name, absConfigPath))
+	lines = append(lines, marker(name, "start"),
+		fmt.Sprintf("%s PATH=%s %s check --instance %s --config %s", inst.StartSchedule, cronPath, exe, name, absConfigPath))
+	if inst.StopSchedule != "" {
+		lines = append(lines, marker(name, "stop"),
+			fmt.Sprintf("%s PATH=%s %s stop --instance %s --config %s", inst.StopSchedule, cronPath, exe, name, absConfigPath))
+	}
 
 	return writeCrontab(ctx, run, lines)
 }
 
-// Remove uninstalls the crontab entry for the instance named name, if any.
-// It is not an error for no entry to exist.
+// Remove uninstalls the crontab entry/entries (start and/or stop) for the
+// instance named name, if any. It is not an error for none to exist.
 func Remove(ctx context.Context, run Runner, name string) error {
 	if run == nil {
 		run = defaultRunner
@@ -164,7 +176,7 @@ func Remove(ctx context.Context, run Runner, name string) error {
 	return writeCrontab(ctx, run, stripped)
 }
 
-// List returns every instsched-managed crontab entry.
+// List returns every instsched-managed crontab entry (start and stop).
 func List(ctx context.Context, run Runner) ([]Entry, error) {
 	if run == nil {
 		run = defaultRunner
@@ -181,14 +193,20 @@ func List(ctx context.Context, run Runner) ([]Entry, error) {
 		if !strings.HasPrefix(marker, markerPrefix) || i+1 >= len(lines) {
 			continue
 		}
-		name := strings.TrimPrefix(marker, markerPrefix)
+		rest := strings.TrimPrefix(marker, markerPrefix)
+		idx := strings.LastIndex(rest, ":")
+		if idx < 0 {
+			continue
+		}
+		name, kind := rest[:idx], rest[idx+1:]
+
 		command := lines[i+1]
 		fields := strings.SplitN(command, " ", 6)
 		schedule := command
 		if len(fields) >= 5 {
 			schedule = strings.Join(fields[:5], " ")
 		}
-		entries = append(entries, Entry{Name: name, Schedule: schedule, Command: command})
+		entries = append(entries, Entry{Name: name, Kind: kind, Schedule: schedule, Command: command})
 		i++
 	}
 	return entries, nil
