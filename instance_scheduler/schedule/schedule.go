@@ -94,11 +94,24 @@ func stripManaged(lines []string, name string) []string {
 	return kept
 }
 
+// cronFallbackPath lists the directories most cron implementations already
+// put on a job's PATH (varies by distro, but these cover the common ones).
+// installDir (wherever this instsched binary itself was installed — same
+// place install.sh puts rescheck) is prepended to this in the generated
+// crontab line, since cron's own default PATH is often just "/usr/bin:/bin"
+// and won't include /usr/local/bin.
+const cronFallbackPath = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+
 // Add installs (or replaces) the crontab entry for the instance named name,
 // using its configured schedule. The generated command uses absolute paths
 // for both the instsched binary and configPath, since cron runs jobs with a
 // minimal environment that can't be relied on to resolve relative paths or
-// a bare "instsched" via PATH.
+// a bare "instsched" via PATH. It also prefixes the command with an
+// explicit PATH= assignment (POSIX sh, which cron uses to run the command,
+// honors a leading "VAR=val" for that one invocation) so that check's
+// internal "rescheck"/"terraform" subprocess calls — looked up by bare name
+// via the job's own PATH, not instsched's — can still find them even under
+// cron's minimal default PATH.
 func Add(ctx context.Context, run Runner, cfg *config.Config, configPath, name string) error {
 	if run == nil {
 		run = defaultRunner
@@ -120,6 +133,7 @@ func Add(ctx context.Context, run Runner, cfg *config.Config, configPath, name s
 	if err != nil {
 		return fmt.Errorf("config 경로를 확인할 수 없습니다: %w", err)
 	}
+	cronPath := filepath.Dir(exe) + ":" + cronFallbackPath
 
 	lines, err := readCrontab(ctx, run)
 	if err != nil {
@@ -127,7 +141,7 @@ func Add(ctx context.Context, run Runner, cfg *config.Config, configPath, name s
 	}
 	lines = stripManaged(lines, name)
 	lines = append(lines, markerPrefix+name,
-		fmt.Sprintf("%s %s check --instance %s --config %s", inst.Schedule, exe, name, absConfigPath))
+		fmt.Sprintf("%s PATH=%s %s check --instance %s --config %s", inst.Schedule, cronPath, exe, name, absConfigPath))
 
 	return writeCrontab(ctx, run, lines)
 }

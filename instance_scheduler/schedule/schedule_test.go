@@ -3,6 +3,8 @@ package schedule
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -72,6 +74,24 @@ func TestAdd_ReplacesExistingEntryForSameInstance(t *testing.T) {
 	}
 	if !strings.Contains(content, "# some other line") {
 		t.Fatalf("expected unrelated crontab lines to survive, got: %q", content)
+	}
+}
+
+func TestAdd_PrefixesCommandWithPATH(t *testing.T) {
+	content := ""
+	run := fakeCrontab(&content)
+
+	if err := Add(context.Background(), run, testConfig(), "/etc/instsched/config.yaml", "web-01"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	wantPrefix := "PATH=" + filepath.Dir(exe) + ":"
+	if !strings.Contains(content, wantPrefix) {
+		t.Fatalf("expected crontab entry to set PATH so 'rescheck'/'terraform' resolve under cron's minimal PATH, got: %q", content)
 	}
 }
 

@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,12 +75,13 @@ func TestCheck_MissingInstanceWithTerraformTriggersApply(t *testing.T) {
 	cfg := testConfig(inst("web-01", true), inst("db-01", true))
 	var applyCalled bool
 	var applyEnv []string
+	wantDir := filepath.Join(".", "terraform") // resolveTerraformDir(".../terraform", "config.yaml")
 	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		if name == "terraform" {
 			applyCalled = true
 			applyEnv = env
-			if dir != "./terraform" {
-				t.Fatalf("expected terraform dir ./terraform, got %q", dir)
+			if dir != wantDir {
+				t.Fatalf("expected terraform dir %q, got %q", wantDir, dir)
 			}
 			return nil, nil
 		}
@@ -197,5 +199,27 @@ func TestCheck_UnknownTargetNameIsError(t *testing.T) {
 
 	if _, err := Check(context.Background(), cfg, "config.yaml", "does-not-exist", run); err == nil {
 		t.Fatal("expected an error for an unconfigured instance name")
+	}
+}
+
+func TestResolveTerraformDir_RelativeIsAnchoredToConfigDir(t *testing.T) {
+	got := resolveTerraformDir("instance_scheduler/terraform", "/home/user/.config/nhn_iac/config.yaml")
+	want := filepath.Join("/home/user/.config/nhn_iac", "instance_scheduler/terraform")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveTerraformDir_AbsoluteIsUnchanged(t *testing.T) {
+	// filepath.Abs guarantees an OS-legitimate absolute path (on Windows,
+	// filepath.IsAbs requires a volume — a bare "/opt/..." string isn't
+	// absolute there), so build "abs" that way rather than hardcoding one.
+	abs, err := filepath.Abs(filepath.Join("opt", "nhn_iac", "terraform"))
+	if err != nil {
+		t.Fatalf("filepath.Abs: %v", err)
+	}
+	got := resolveTerraformDir(abs, "/home/user/.config/nhn_iac/config.yaml")
+	if got != abs {
+		t.Fatalf("got %q, want unchanged %q", got, abs)
 	}
 }

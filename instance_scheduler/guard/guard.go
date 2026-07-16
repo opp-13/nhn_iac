@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/opp-13/nhn_iac/instance_scheduler/config"
@@ -155,7 +156,7 @@ func Check(ctx context.Context, cfg *config.Config, configPath, targetName strin
 	}
 
 	if len(toRecreate) > 0 {
-		_, applyErr := applyTerraform(ctx, run, cfg.Nhn.Instancescheduler.TerraformDir, &cfg.Nhn.Auth)
+		_, applyErr := applyTerraform(ctx, run, resolveTerraformDir(cfg.Nhn.Instancescheduler.TerraformDir, configPath), &cfg.Nhn.Auth)
 		for _, inst := range toRecreate {
 			if applyErr != nil {
 				results = append(results, InstanceResult{Name: inst.Name, Action: ActionError, Detail: applyErr.Error()})
@@ -166,6 +167,18 @@ func Check(ctx context.Context, cfg *config.Config, configPath, targetName strin
 	}
 
 	return Result{Instances: results}, nil
+}
+
+// resolveTerraformDir anchors a relative terraformDir to the directory
+// containing config.yaml rather than the process's current directory —
+// cron's cwd is unpredictable, but config.yaml's location (found via
+// config.FindConfigPath or an explicit --config) is known. An absolute
+// terraformDir is returned unchanged.
+func resolveTerraformDir(terraformDir, configPath string) string {
+	if terraformDir == "" || filepath.IsAbs(terraformDir) {
+		return terraformDir
+	}
+	return filepath.Join(filepath.Dir(configPath), terraformDir)
 }
 
 func listInstances(ctx context.Context, run Runner, configPath string) ([]instanceJSON, error) {

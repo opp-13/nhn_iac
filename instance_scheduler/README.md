@@ -44,9 +44,20 @@ nhn:
         terraform: false              # 삭제됐으면 복구하지 않고 로그만 남김
 ```
 
+`schedule`은 cron 표현식(`분 시 일 월 요일`)이다 — **범위가 아니라 특정 시점**을 뜻한다.
+`"0 9 * * *"`는 "0시~9시 사이에 떠있어야 함"이 아니라 "매일 09:00 정각에 딱 한 번 점검한다"는
+뜻이다. 특정 시간대 내내 떠있는지 계속 확인하려면 `"*/10 9-18 * * *"`(9~18시 사이 10분마다)처럼
+범위와 반복 주기를 조합해야 한다.
+
 `terraform: true`인 인스턴스 이름은 `terraform/terraform.tfvars`의 `instances` map key와
 정확히 일치해야 한다 (같은 이름으로 클라우드 상태와 terraform 정의를 매칭한다).
 `terraform: false`인 인스턴스는 tfvars에 넣을 필요가 없다.
+
+`terraformDir`가 상대경로면 (기본값 `./instance_scheduler/terraform`처럼) **config.yaml이
+있는 디렉토리 기준**으로 해석된다 (cron의 예측 불가능한 cwd에 의존하지 않기 위함). config.yaml을
+`~/.config/nhn_iac/config.yaml`에 두면서 실제 저장소는 다른 곳(예: `~/nhn_iac/`)에 클론했다면,
+상대경로는 맞지 않으니 `terraformDir`에 저장소의 실제 절대경로(예:
+`/root/nhn_iac/instance_scheduler/terraform`)를 직접 적어야 한다.
 
 인스턴스마다 NIC(port)를 `openstack_networking_port_v2`로 명시적으로 프로비저닝한다 —
 `instances[].fixed_ip`를 지정하면 그 IP로 고정되고, 생략(`null`)하면 subnet의 DHCP 할당에
