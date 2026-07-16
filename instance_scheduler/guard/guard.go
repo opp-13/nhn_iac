@@ -158,11 +158,35 @@ func Check(ctx context.Context, cfg *config.Config, configPath, targetName strin
 
 	if len(toRecreate) > 0 {
 		_, applyErr := applyTerraform(ctx, run, resolveTerraformDir(cfg.Nhn.Instancescheduler.TerraformDir, configPath), &cfg.Nhn.Auth)
-		for _, inst := range toRecreate {
-			if applyErr != nil {
+		if applyErr != nil {
+			for _, inst := range toRecreate {
 				results = append(results, InstanceResult{Name: inst.Name, Action: ActionError, Detail: applyErr.Error()})
-			} else {
-				results = append(results, InstanceResult{Name: inst.Name, Action: ActionRecreated})
+			}
+		} else {
+			// terraform apply exiting 0 only means the command ran without
+			// error — it says nothing about whether a *specific* instance
+			// actually exists now (e.g. its name might be missing from
+			// terraform.tfvars entirely, in which case apply has nothing to
+			// do and silently no-ops for it). Re-list and confirm each one
+			// is really there before calling it recreated.
+			verified, verifyErr := listInstances(ctx, run, configPath)
+			verifiedByName := make(map[string]instanceJSON, len(verified))
+			for _, v := range verified {
+				verifiedByName[v.Name] = v
+			}
+			for _, inst := range toRecreate {
+				switch {
+				case verifyErr != nil:
+					results = append(results, InstanceResult{Name: inst.Name, Action: ActionError,
+						Detail: fmt.Sprintf("terraform apply는 성공했지만 재조회 실패: %v", verifyErr)})
+				default:
+					if _, ok := verifiedByName[inst.Name]; ok {
+						results = append(results, InstanceResult{Name: inst.Name, Action: ActionRecreated})
+					} else {
+						results = append(results, InstanceResult{Name: inst.Name, Action: ActionError,
+							Detail: "terraform apply는 성공했지만 인스턴스가 여전히 없습니다 — terraform.tfvars에 이름이 등록되어 있는지 확인하세요"})
+					}
+				}
 			}
 		}
 	}

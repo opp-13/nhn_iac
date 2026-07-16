@@ -75,15 +75,22 @@ func TestCheck_MissingInstanceWithTerraformTriggersApply(t *testing.T) {
 	cfg := testConfig(inst("web-01", true), inst("db-01", true))
 	var applyCalled bool
 	var applyEnv []string
+	applied := false
 	wantDir := filepath.Join(".", "terraform") // resolveTerraformDir(".../terraform", "config.yaml")
 	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		if name == "terraform" {
 			applyCalled = true
 			applyEnv = env
+			applied = true
 			if dir != wantDir {
 				t.Fatalf("expected terraform dir %q, got %q", wantDir, dir)
 			}
 			return nil, nil
+		}
+		// Simulates the pre-apply list (db-01 missing) vs. the post-apply
+		// verification list (db-01 now recreated by terraform apply).
+		if applied {
+			return []byte(`[{"name":"web-01","status":"ACTIVE"},{"name":"db-01","status":"BUILD"}]`), nil
 		}
 		return []byte(`[{"name":"web-01","status":"ACTIVE"}]`), nil
 	}
@@ -154,6 +161,30 @@ func TestCheck_TerraformApplyFailureIsReportedAsError(t *testing.T) {
 	}
 	if len(result.Instances) != 1 || result.Instances[0].Action != ActionError {
 		t.Fatalf("expected ActionError, got %+v", result.Instances)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected HasErrors() to be true")
+	}
+}
+
+func TestCheck_TerraformApplySucceedsButInstanceStillMissing(t *testing.T) {
+	// terraform apply exits 0 even when an instance's name was never added
+	// to terraform.tfvars — apply just has nothing to do for it. Check must
+	// re-verify existence rather than trust the exit code alone.
+	cfg := testConfig(inst("db-01", true))
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+		if name == "terraform" {
+			return nil, nil // apply "succeeds" but changes nothing
+		}
+		return []byte(`[]`), nil // db-01 never shows up, pre- or post-apply
+	}
+
+	result, err := Check(context.Background(), cfg, "config.yaml", "", run)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if len(result.Instances) != 1 || result.Instances[0].Action != ActionError {
+		t.Fatalf("expected ActionError (apply succeeded but instance still missing), got %+v", result.Instances)
 	}
 	if !result.HasErrors() {
 		t.Fatal("expected HasErrors() to be true")
