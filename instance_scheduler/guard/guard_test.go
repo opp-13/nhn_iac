@@ -286,6 +286,18 @@ func TestResolveTerraformDir_RelativeIsAnchoredToConfigDir(t *testing.T) {
 	}
 }
 
+func TestResolveTerraformDir_EmptyFallsBackToHomeDir(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir reads this on Windows
+
+	got := resolveTerraformDir("", "/home/user/.config/nhn_iac/config.yaml")
+	want := filepath.Join(tmpHome, filepath.FromSlash(".config/nhn_iac/instance_scheduler/terraform"))
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestResolveTerraformDir_AbsoluteIsUnchanged(t *testing.T) {
 	// filepath.Abs guarantees an OS-legitimate absolute path (on Windows,
 	// filepath.IsAbs requires a volume — a bare "/opt/..." string isn't

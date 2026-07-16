@@ -68,11 +68,17 @@ nhn:
 정확히 일치해야 한다 (같은 이름으로 클라우드 상태와 terraform 정의를 매칭한다).
 `terraform: false`인 인스턴스는 tfvars에 넣을 필요가 없다.
 
-`terraformDir`가 상대경로면 (기본값 `./instance_scheduler/terraform`처럼) **config.yaml이
-있는 디렉토리 기준**으로 해석된다 (cron의 예측 불가능한 cwd에 의존하지 않기 위함). config.yaml을
-`~/.config/nhn_iac/config.yaml`에 두면서 실제 저장소는 다른 곳(예: `~/nhn_iac/`)에 클론했다면,
-상대경로는 맞지 않으니 `terraformDir`에 저장소의 실제 절대경로(예:
-`/root/nhn_iac/instance_scheduler/terraform`)를 직접 적어야 한다.
+`terraformDir` 해석 순서:
+1. 절대경로면 그대로 사용
+2. 상대경로면 **config.yaml이 있는 디렉토리 기준**으로 해석 (cron의 예측 불가능한 cwd에
+   의존하지 않기 위함)
+3. 아예 적지 않으면(비워두면) `~/.config/nhn_iac/instance_scheduler/terraform`을 기본값으로 사용
+
+config.yaml을 `~/.config/nhn_iac/config.yaml`에 두면서 실제 저장소는 다른 곳(예:
+`~/nhn_iac/`)에 클론했다면, 2번(상대경로) 해석이 실제 `.tf` 파일 위치와 맞지 않으니
+`terraformDir`에 저장소의 실제 절대경로(예: `/root/nhn_iac/instance_scheduler/terraform`)를
+직접 적거나, 아니면 실제 `.tf` 파일들을 3번 기본 경로(`~/.config/nhn_iac/instance_scheduler/terraform`)로
+옮겨서 아예 `terraformDir`을 생략해도 된다.
 
 인스턴스마다 NIC(port)를 `openstack_networking_port_v2`로 명시적으로 프로비저닝한다 —
 `instances[].fixed_ip`를 지정하면 그 IP로 고정되고, 생략(`null`)하면 subnet의 DHCP 할당에
